@@ -5,8 +5,8 @@ import { mainApi } from '@gl/ipc-api'
 import { Artifact, Channel } from '@gl/types'
 import { Region, Sharp } from 'sharp'
 
-import { Landmarks, ScreenMap, load } from './landmarks'
-import { OCR } from './ocr'
+import { Landmarks, load, ScreenMap } from './landmarks'
+import { createOCR } from './ocr'
 import {
   getArtifactSet,
   getMainStat,
@@ -21,9 +21,10 @@ type Offset = [x: number, y: number]
 export class Navigator {
   gwindow: GenshinWindow
   landmarks: Landmarks
-  ocr = new OCR()
-  constructor() {
-    this.gwindow = new GenshinWindow()
+  ocr: ReturnType<typeof createOCR>
+  constructor(gwindow = new GenshinWindow(), ocr = createOCR()) {
+    this.gwindow = gwindow
+    this.ocr = ocr
     if (!this.gwindow.grab()) {
       mainApi.send(
         Channel.LOG,
@@ -88,16 +89,17 @@ export class Navigator {
     this.gwindow.click()
   }
 
-  debugPrint(image: Sharp) {
-    const fileName = path.join(os.tmpdir(), `temp-${new Date().getTime()}.png`)
-    image.toFile(fileName, (err) => {
-      if (err) {
-        console.error(err)
-      } else {
-        console.info('The file was saved!')
-      }
-    })
+  async debugPrint(image: Sharp) {
+    const fileName = path.join(
+      os.tmpdir(),
+      `temp-${new Date().getTime()}-${(Math.random() * 1000).toFixed(0)}.png`
+    )
     console.info(fileName)
+    await image
+      .toFile(fileName)
+      .catch((err) => console.error(err))
+      .then(() => console.info('The file was saved!'))
+    return fileName
   }
 
   async #readTexts(
@@ -118,7 +120,9 @@ export class Navigator {
             })
             .withMetadata()
             .png()
-          return this.ocr.recognize(await imageRegion.toBuffer())
+          return this.ocr.then(async (ocr) =>
+            ocr.recognize(await imageRegion.toBuffer())
+          )
         }
       )
     )
@@ -155,12 +159,14 @@ export class Navigator {
         .raw()
         .toBuffer()
       const pixel = Array.from(bytes)
-      if (
-        colorLower.length !== colorUpper.length ||
-        colorUpper.length !== pixel.length
-      ) {
+      if (colorLower.length !== pixel.length) {
         throw Error(
-          `Pixel test color range start or end are not of length ${pixel.length}`
+          `Pixel test colorLower is not of length ${pixel.length}, was ${colorLower.length}`
+        )
+      }
+      if (colorUpper.length !== pixel.length) {
+        throw Error(
+          `Pixel test colorUpper is not of length ${pixel.length}, was ${colorUpper.length}`
         )
       }
       return pixel
@@ -210,12 +216,14 @@ export class Navigator {
       image.clone().extractChannel('blue'),
       'elixir',
       [250],
-      [255]
+      [255],
+      [40, 0]
     )
-    const offsetY = isElixired
+
+    const elixirOffsetY = isElixired
       ? this.landmarks[ScreenMap.ARTIFACTS]['elixir'].region().height
       : 0
-    const elixirOffset: Offset = [0, offsetY]
+    const elixirOffset: Offset = [0, elixirOffsetY]
 
     const [
       card_set,
@@ -228,7 +236,14 @@ export class Navigator {
       card_name,
       card_mainstat_value,
     ] = await Promise.all([
-      this.#readTexts(image, 'card_set', elixirOffset),
+      this.#readText(
+        image
+          .clone()
+          .extractChannel('blue')
+          .threshold(125, { grayscale: false }),
+        'card_set',
+        elixirOffset
+      ),
       this.#readText(imageBWInverted, 'card_slot_type'),
       this.#pixelTest(image, 'card_rarity', [255, 204, 50]),
       this.#readText(imageBWInverted, 'card_mainstat_key'),
@@ -257,7 +272,7 @@ export class Navigator {
     const level = getNumber(card_level)
     const rarity = card_rarity
     const substats = getSubstats(card_substat)
-    const setKey = getArtifactSet(card_set[substats.length])
+    const setKey = getArtifactSet(card_set)
     const lock = Boolean(card_lock)
     const name = card_name
 
