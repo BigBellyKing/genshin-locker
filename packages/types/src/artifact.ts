@@ -96,6 +96,8 @@ export enum SetKey {
   UnfinishedReverie = 'UnfinishedReverie',
   NightOfTheSkysUnveiling = 'NightOfTheSkysUnveiling',
   SilkenMoonsSerenade = 'SilkenMoonsSerenade',
+  AubadeOfMorningstarAndMoon = 'AubadeOfMorningstarAndMoon',
+  ADayCarvedFromRisingWinds = 'ADayCarvedFromRisingWinds',
 }
 
 export interface SubStat {
@@ -104,7 +106,6 @@ export interface SubStat {
 }
 
 export interface Artifact {
-  name: string
   mainStatValue: number
   setKey: SetKey
   slotKey: SlotKey
