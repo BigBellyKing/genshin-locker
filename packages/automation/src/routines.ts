@@ -90,7 +90,7 @@ export async function readArtifacts(
 
   const artifactTask = (thisPageIndex: number) => async () => {
     clickArray[thisPageIndex]()
-    await sleep(100)
+    await sleep(150)
     const image = await navigator.gwindow.capture()
     const region = regions[thisPageIndex]
     if (await navigator.isEmpty(image, region)) {
